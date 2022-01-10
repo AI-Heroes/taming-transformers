@@ -44,6 +44,15 @@ def get_parser(**parser_kwargs):
         help="postfix for logdir",
     )
     parser.add_argument(
+        "-e",
+        "--every_n_epochs",
+        type=int,
+        const=True,
+        default="0",
+        nargs="?",
+        help="save checkpoint every n epochs",
+    )
+    parser.add_argument(
         "-r",
         "--resume",
         type=str,
@@ -404,7 +413,7 @@ if __name__ == "__main__":
         else:
             name = ""
         nowname = now+name+opt.postfix
-        logdir = os.path.join("logs", nowname)
+        logdir = os.path.join("/content/drive/MyDrive/logs", nowname)
 
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
@@ -475,8 +484,14 @@ if __name__ == "__main__":
                 "filename": "{epoch:06}",
                 "verbose": True,
                 "save_last": True,
+                "save_top_k": -1
             }
         }
+        
+        if opt.every_n_epochs:
+            default_modelckpt_cfg["params"]["save_top_k"] = -1
+            default_modelckpt_cfg["params"]["preriod"] = opt.every_n_epochs
+
         if hasattr(model, "monitor"):
             print(f"Monitoring {model.monitor} as checkpoint metric.")
             default_modelckpt_cfg["params"]["monitor"] = model.monitor
