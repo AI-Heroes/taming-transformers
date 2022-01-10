@@ -490,7 +490,7 @@ if __name__ == "__main__":
         
         if opt.every_n_epochs:
             default_modelckpt_cfg["params"]["save_top_k"] = -1
-            default_modelckpt_cfg["params"]["preriod"] = opt.every_n_epochs
+            default_modelckpt_cfg["params"]["period"] = opt.every_n_epochs
 
         if hasattr(model, "monitor"):
             print(f"Monitoring {model.monitor} as checkpoint metric.")
