@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
-import impotlib
+import importlib
 
 from taming.modules.diffusionmodules.model import Encoder, Decoder
 from taming.modules.vqvae.quantize import VectorQuantizer2 as VectorQuantizer
