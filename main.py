@@ -12,7 +12,8 @@ from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateM
 from pytorch_lightning.utilities.distributed import rank_zero_only
 
 from taming.data.utils import custom_collate
-from taming.models.vqgan import get_obj_from_str, instantiate_from_config
+from taming.models.vqgan import get_obj_from_str, instantiate_from_config, VQGan, GumbelVQ
+from taming.models import cond_transformer
 
 
 def get_parser(**parser_kwargs):
