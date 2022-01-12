@@ -323,7 +323,13 @@ class ImageLogger(Callback):
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         self.log_img(pl_module, batch, batch_idx, split="val")
-
+        
+class EpochLoggingModelCheckpoint(ModelCheckpoint):
+    @rank_zero_only
+    def _del_model(self, filepath: str):
+        if self._fs.exists(filepath):
+            self._fs.rm(filepath)
+            log.debug(f"Removed checkpoint: {filepath}")
 
 
 if __name__ == "__main__":
