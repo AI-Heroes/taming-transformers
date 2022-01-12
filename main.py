@@ -12,14 +12,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateM
 from pytorch_lightning.utilities.distributed import rank_zero_only
 
 from taming.data.utils import custom_collate
-
-
-def get_obj_from_str(string, reload=False):
-    module, cls = string.rsplit(".", 1)
-    if reload:
-        module_imp = importlib.import_module(module)
-        importlib.reload(module_imp)
-    return getattr(importlib.import_module(module, package=None), cls)
+from taming.models.vqgan import get_obj_from_str, instantiate_from_config
 
 
 def get_parser(**parser_kwargs):
@@ -478,7 +471,21 @@ if __name__ == "__main__":
         lightning_config.trainer = trainer_config
 
         # model
-        model = instantiate_from_config(config.model)
+        if opt.resume:
+            if config.model.target == "taming.models.vqgan.VQModel":
+                model = vqgan.VQModel(**config.model.params, ckpt_path=ckpt)
+                model.eval()
+            elif config.model.target == "taming.models.cond_transformer.Net2NetTransformer":
+                parent_model = cond_transformer.Net2NetTransformer(**config.model.params, ckpt_path=ckpt)
+                parent_model.eval()
+                model = parent_model.first_stage_model
+            elif config.model.target == "taming.models.vqgan.GumbelVQ":
+                model = vqgan.GumbelVQ(**config.model.params, ckpt_path=ckpt)
+                model.eval()
+            else:
+                raise ValueError(f"unknown model type: {config.model.target}")
+        else:
+            model = instantiate_from_config(config.model)
 
         # trainer and callbacks
         trainer_kwargs = dict()
