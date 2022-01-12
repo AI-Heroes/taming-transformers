@@ -324,12 +324,42 @@ class ImageLogger(Callback):
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         self.log_img(pl_module, batch, batch_idx, split="val")
         
-class EpochLoggingModelCheckpoint(ModelCheckpoint):
+
+class EpochModelCheckpoint(ModelCheckpoint):
     @rank_zero_only
-    def _del_model(self, filepath: str):
+    def _del_model(self, filepath: str): # Overrides existing method
+        print(filepath)
+        assert filepath == "Not an actual filepath"
         if self._fs.exists(filepath):
             self._fs.rm(filepath)
-            log.debug(f"Removed checkpoint: {filepath}")
+            print(f"Removed checkpoint: {filepath}")
+
+    def _save_last_checkpoint(self, trainer, pl_module, epoch, ckpt_name_metrics, filepath):
+        should_save_last = self.monitor is None or self.save_last
+        if not should_save_last:
+            return
+
+        last_filepath = filepath
+
+        # when user ALSO asked for the 'last.ckpt' change the name
+        # if self.save_last:
+        #     last_filepath = self._format_checkpoint_name(
+        #         self.CHECKPOINT_NAME_LAST, epoch, ckpt_name_metrics, prefix=self.prefix
+        #     )
+        #     last_filepath = os.path.join(self.dirpath, f"{last_filepath}.ckpt")
+
+        self._save_model(last_filepath, trainer, pl_module)
+        # if (
+        #         self.last_model_path
+        #         and self.last_model_path != last_filepath
+        #         and (self.save_top_k != -1 or self.save_last)
+        #         and trainer.is_global_zero
+        # ):
+        #     self._del_model(self.last_model_path)
+        self.last_model_path = last_filepath
+
+        if self.monitor is None:
+            self.best_model_path = self.last_model_path
 
 
 if __name__ == "__main__":
@@ -493,10 +523,6 @@ if __name__ == "__main__":
             }
         }
         
-#         if opt.every_n_epochs:
-#             default_modelckpt_cfg["params"]["save_top_k"] = 999999999
-#             default_modelckpt_cfg["params"]["period"] = opt.every_n_epochs
-
         if hasattr(model, "monitor"):
             print(f"Monitoring {model.monitor} as checkpoint metric.")
             default_modelckpt_cfg["params"]["monitor"] = model.monitor
@@ -504,7 +530,15 @@ if __name__ == "__main__":
 
         modelckpt_cfg = lightning_config.modelcheckpoint or OmegaConf.create()
         modelckpt_cfg = OmegaConf.merge(default_modelckpt_cfg, modelckpt_cfg)
-        trainer_kwargs["checkpoint_callback"] = instantiate_from_config(modelckpt_cfg)
+        
+        if opt.every_n_epochs:
+          trainer_kwargs["checkpoint_callback"] = EpochModelCheckpoint(dirpath=ckptdir, 
+                                                                       filename="{epoch:06}", 
+                                                                       verbose=True, 
+                                                                       save_last=True, 
+                                                                       period=opt.every_n_epochs)
+        else:
+          trainer_kwargs["checkpoint_callback"] = instantiate_from_config(modelckpt_cfg)
 
         # add callback which sets up log directory
         default_callbacks_cfg = {
