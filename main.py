@@ -475,14 +475,11 @@ if __name__ == "__main__":
         if opt.resume:
             if config.model.target == "taming.models.vqgan.VQModel":
                 model = vqgan.VQModel(**config.model.params, ckpt_path=ckpt)
-                model.eval()
             elif config.model.target == "taming.models.cond_transformer.Net2NetTransformer":
                 parent_model = cond_transformer.Net2NetTransformer(**config.model.params, ckpt_path=ckpt)
-                parent_model.eval()
                 model = parent_model.first_stage_model
             elif config.model.target == "taming.models.vqgan.GumbelVQ":
                 model = vqgan.GumbelVQ(**config.model.params, ckpt_path=ckpt)
-                model.eval()
             else:
                 raise ValueError(f"unknown model type: {config.model.target}")
         else:
