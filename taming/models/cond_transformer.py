@@ -7,12 +7,6 @@ from main import instantiate_from_config
 from taming.modules.util import SOSProvider
 
 
-def disabled_train(self, mode=True):
-    """Overwrite model.train with this function to make sure train/eval mode
-    does not change anymore."""
-    return self
-
-
 class Net2NetTransformer(pl.LightningModule):
     def __init__(self,
                  transformer_config,
@@ -58,7 +52,6 @@ class Net2NetTransformer(pl.LightningModule):
     def init_first_stage_from_ckpt(self, config):
         model = instantiate_from_config(config)
         model = model.eval()
-        model.train = disabled_train
         self.first_stage_model = model
 
     def init_cond_stage_from_ckpt(self, config):
@@ -74,7 +67,6 @@ class Net2NetTransformer(pl.LightningModule):
         else:
             model = instantiate_from_config(config)
             model = model.eval()
-            model.train = disabled_train
             self.cond_stage_model = model
 
     def forward(self, x, c):
