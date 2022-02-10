@@ -1,24 +1,27 @@
-import sys, os
+import os
+import sys
+
 import numpy as np
 import scipy
 import torch
+import torch.hub
 import torch.nn as nn
+import torch.nn.functional as F
+import torchvision
+from PIL import Image
 from scipy import ndimage
 from tqdm import tqdm, trange
-from PIL import Image
-import torch.hub
-import torchvision
-import torch.nn.functional as F
 
 # download deeplabv2_resnet101_msc-cocostuff164k-100000.pth from
 # https://github.com/kazuto1011/deeplab-pytorch/releases/download/v1.0/deeplabv2_resnet101_msc-cocostuff164k-100000.pth
 # and put the path here
 CKPT_PATH = "TODO"
 
-rescale = lambda x: (x + 1.) / 2.
+rescale = lambda x: (x + 1.0) / 2.0
+
 
 def rescale_bgr(x):
-    x = (x+1)*127.5
+    x = (x + 1) * 127.5
     x = torch.flip(x, dims=[0])
     return x
 
@@ -28,16 +31,23 @@ class COCOStuffSegmenter(nn.Module):
         super().__init__()
         self.config = config
         self.n_labels = 182
-        model = torch.hub.load("kazuto1011/deeplab-pytorch", "deeplabv2_resnet101", n_classes=self.n_labels)
+        model = torch.hub.load(
+            "kazuto1011/deeplab-pytorch", "deeplabv2_resnet101", n_classes=self.n_labels
+        )
         ckpt_path = CKPT_PATH
         model.load_state_dict(torch.load(ckpt_path))
         self.model = model
 
         normalize = torchvision.transforms.Normalize(mean=self.mean, std=self.std)
-        self.image_transform = torchvision.transforms.Compose([
-            torchvision.transforms.Lambda(lambda image: torch.stack(
-                [normalize(rescale_bgr(x)) for x in image]))
-        ])
+        self.image_transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.Lambda(
+                    lambda image: torch.stack(
+                        [normalize(rescale_bgr(x)) for x in image]
+                    )
+                )
+            ]
+        )
 
     def forward(self, x, upsample=None):
         x = self._pre_process(x)
@@ -83,10 +93,10 @@ def get_input(batch, k):
 def save_segmentation(segmentation, path):
     # --> class label to uint8, save as png
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    assert len(segmentation.shape)==4
-    assert segmentation.shape[0]==1
+    assert len(segmentation.shape) == 4
+    assert segmentation.shape[0] == 1
     for seg in segmentation:
-        seg = seg.permute(1,2,0).numpy().squeeze().astype(np.uint8)
+        seg = seg.permute(1, 2, 0).numpy().squeeze().astype(np.uint8)
         seg = Image.fromarray(seg)
         seg.save(path)
 
@@ -113,8 +123,9 @@ def iterate_dataset(dataloader, destpath, model):
     print("Processed {} files. Bye.".format(num_processed))
 
 
-from taming.data.sflckr import Examples
 from torch.utils.data import DataLoader
+
+from taming.data.sflckr import Examples
 
 if __name__ == "__main__":
     dest = sys.argv[1]

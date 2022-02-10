@@ -1,19 +1,30 @@
-import argparse, os, sys, datetime, glob, importlib
-from omegaconf import OmegaConf
+import argparse
+import datetime
+import glob
+import importlib
+import os
+import sys
+
 import numpy as np
-from PIL import Image
+import pytorch_lightning as pl
 import torch
 import torchvision
-from torch.utils.data import random_split, DataLoader, Dataset
-import pytorch_lightning as pl
+from omegaconf import OmegaConf
+from PIL import Image
 from pytorch_lightning import seed_everything
+from pytorch_lightning.callbacks import Callback, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.trainer import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint, Callback, LearningRateMonitor
 from pytorch_lightning.utilities.distributed import rank_zero_only
+from torch.utils.data import DataLoader, Dataset, random_split
 
 from taming.data.utils import custom_collate
-from taming.models.vqgan import get_obj_from_str, instantiate_from_config, VQModel, GumbelVQ
 from taming.models import cond_transformer
+from taming.models.vqgan import (
+    GumbelVQ,
+    VQModel,
+    get_obj_from_str,
+    instantiate_from_config,
+)
 
 
 def get_parser(**parser_kwargs):
@@ -81,7 +92,9 @@ def get_parser(**parser_kwargs):
         nargs="?",
         help="disable test",
     )
-    parser.add_argument("-p", "--project", help="name of new or path to existing project")
+    parser.add_argument(
+        "-p", "--project", help="name of new or path to existing project"
+    )
     parser.add_argument(
         "-d",
         "--debug",
@@ -132,6 +145,7 @@ def instantiate_from_config(config):
 
 class WrappedDataset(Dataset):
     """Wraps an arbitrary object with __len__ and __getitem__ into a pytorch dataset"""
+
     def __init__(self, dataset):
         self.data = dataset
 
@@ -143,12 +157,19 @@ class WrappedDataset(Dataset):
 
 
 class DataModuleFromConfig(pl.LightningDataModule):
-    def __init__(self, batch_size, train=None, validation=None, test=None,
-                 wrap=False, num_workers=None):
+    def __init__(
+        self,
+        batch_size,
+        train=None,
+        validation=None,
+        test=None,
+        wrap=False,
+        num_workers=None,
+    ):
         super().__init__()
         self.batch_size = batch_size
         self.dataset_configs = dict()
-        self.num_workers = num_workers if num_workers is not None else batch_size*2
+        self.num_workers = num_workers if num_workers is not None else batch_size * 2
         if train is not None:
             self.dataset_configs["train"] = train
             self.train_dataloader = self._train_dataloader
@@ -167,23 +188,36 @@ class DataModuleFromConfig(pl.LightningDataModule):
     def setup(self, stage=None):
         self.datasets = dict(
             (k, instantiate_from_config(self.dataset_configs[k]))
-            for k in self.dataset_configs)
+            for k in self.dataset_configs
+        )
         if self.wrap:
             for k in self.datasets:
                 self.datasets[k] = WrappedDataset(self.datasets[k])
 
     def _train_dataloader(self):
-        return DataLoader(self.datasets["train"], batch_size=self.batch_size,
-                          num_workers=self.num_workers, shuffle=True, collate_fn=custom_collate)
+        return DataLoader(
+            self.datasets["train"],
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            shuffle=True,
+            collate_fn=custom_collate,
+        )
 
     def _val_dataloader(self):
-        return DataLoader(self.datasets["validation"],
-                          batch_size=self.batch_size,
-                          num_workers=self.num_workers, collate_fn=custom_collate)
+        return DataLoader(
+            self.datasets["validation"],
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            collate_fn=custom_collate,
+        )
 
     def _test_dataloader(self):
-        return DataLoader(self.datasets["test"], batch_size=self.batch_size,
-                          num_workers=self.num_workers, collate_fn=custom_collate)
+        return DataLoader(
+            self.datasets["test"],
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            collate_fn=custom_collate,
+        )
 
 
 class SetupCallback(Callback):
@@ -206,13 +240,17 @@ class SetupCallback(Callback):
 
             print("Project config")
             print(self.config.pretty())
-            OmegaConf.save(self.config,
-                           os.path.join(self.cfgdir, "{}-project.yaml".format(self.now)))
+            OmegaConf.save(
+                self.config,
+                os.path.join(self.cfgdir, "{}-project.yaml".format(self.now)),
+            )
 
             print("Lightning config")
             print(self.lightning_config.pretty())
-            OmegaConf.save(OmegaConf.create({"lightning": self.lightning_config}),
-                           os.path.join(self.cfgdir, "{}-lightning.yaml".format(self.now)))
+            OmegaConf.save(
+                OmegaConf.create({"lightning": self.lightning_config}),
+                os.path.join(self.cfgdir, "{}-lightning.yaml".format(self.now)),
+            )
 
         else:
             # ModelCheckpoint callback created log directory --- remove it
@@ -227,7 +265,9 @@ class SetupCallback(Callback):
 
 
 class ImageLogger(Callback):
-    def __init__(self, batch_frequency, max_images, clamp=True, increase_log_steps=True):
+    def __init__(
+        self, batch_frequency, max_images, clamp=True, increase_log_steps=True
+    ):
         super().__init__()
         self.batch_freq = batch_frequency
         self.max_images = max_images
@@ -235,7 +275,7 @@ class ImageLogger(Callback):
             pl.loggers.WandbLogger: self._wandb,
             pl.loggers.TestTubeLogger: self._testtube,
         }
-        self.log_steps = [2 ** n for n in range(int(np.log2(self.batch_freq)) + 1)]
+        self.log_steps = [2**n for n in range(int(np.log2(self.batch_freq)) + 1)]
         if not increase_log_steps:
             self.log_steps = [self.batch_freq]
         self.clamp = clamp
@@ -253,38 +293,37 @@ class ImageLogger(Callback):
     def _testtube(self, pl_module, images, batch_idx, split):
         for k in images:
             grid = torchvision.utils.make_grid(images[k])
-            grid = (grid+1.0)/2.0 # -1,1 -> 0,1; c,h,w
+            grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
 
             tag = f"{split}/{k}"
             pl_module.logger.experiment.add_image(
-                tag, grid,
-                global_step=pl_module.global_step)
+                tag, grid, global_step=pl_module.global_step
+            )
 
     @rank_zero_only
-    def log_local(self, save_dir, split, images,
-                  global_step, current_epoch, batch_idx):
+    def log_local(self, save_dir, split, images, global_step, current_epoch, batch_idx):
         root = os.path.join(save_dir, "images", split)
         for k in images:
             grid = torchvision.utils.make_grid(images[k], nrow=4)
 
-            grid = (grid+1.0)/2.0 # -1,1 -> 0,1; c,h,w
-            grid = grid.transpose(0,1).transpose(1,2).squeeze(-1)
+            grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
+            grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
             grid = grid.numpy()
-            grid = (grid*255).astype(np.uint8)
+            grid = (grid * 255).astype(np.uint8)
             filename = "{}_gs-{:06}_e-{:06}_b-{:06}.png".format(
-                k,
-                global_step,
-                current_epoch,
-                batch_idx)
+                k, global_step, current_epoch, batch_idx
+            )
             path = os.path.join(root, filename)
             os.makedirs(os.path.split(path)[0], exist_ok=True)
             Image.fromarray(grid).save(path)
 
     def log_img(self, pl_module, batch, batch_idx, split="train"):
-        if (self.check_frequency(batch_idx) and  # batch_idx % self.batch_freq == 0
-                hasattr(pl_module, "log_images") and
-                callable(pl_module.log_images) and
-                self.max_images > 0):
+        if (
+            self.check_frequency(batch_idx)
+            and hasattr(pl_module, "log_images")  # batch_idx % self.batch_freq == 0
+            and callable(pl_module.log_images)
+            and self.max_images > 0
+        ):
             logger = type(pl_module.logger)
 
             is_train = pl_module.training
@@ -300,12 +339,20 @@ class ImageLogger(Callback):
                 if isinstance(images[k], torch.Tensor):
                     images[k] = images[k].detach().cpu()
                     if self.clamp:
-                        images[k] = torch.clamp(images[k], -1., 1.)
+                        images[k] = torch.clamp(images[k], -1.0, 1.0)
 
-            self.log_local(pl_module.logger.save_dir, split, images,
-                           pl_module.global_step, pl_module.current_epoch, batch_idx)
+            self.log_local(
+                pl_module.logger.save_dir,
+                split,
+                images,
+                pl_module.global_step,
+                pl_module.current_epoch,
+                batch_idx,
+            )
 
-            logger_log_images = self.logger_log_images.get(logger, lambda *args, **kwargs: None)
+            logger_log_images = self.logger_log_images.get(
+                logger, lambda *args, **kwargs: None
+            )
             logger_log_images(pl_module, images, pl_module.global_step, split)
 
             if is_train:
@@ -320,23 +367,29 @@ class ImageLogger(Callback):
             return True
         return False
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_train_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
         self.log_img(pl_module, batch, batch_idx, split="train")
 
-    def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
+    def on_validation_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
         self.log_img(pl_module, batch, batch_idx, split="val")
-        
+
 
 class EpochModelCheckpoint(ModelCheckpoint):
     @rank_zero_only
-    def _del_model(self, filepath: str): # Overrides existing method
+    def _del_model(self, filepath: str):  # Overrides existing method
         print(filepath)
         assert filepath == "Not an actual filepath"
         if self._fs.exists(filepath):
             self._fs.rm(filepath)
             print(f"Removed checkpoint: {filepath}")
 
-    def _save_last_checkpoint(self, trainer, pl_module, epoch, ckpt_name_metrics, filepath):
+    def _save_last_checkpoint(
+        self, trainer, pl_module, epoch, ckpt_name_metrics, filepath
+    ):
         should_save_last = self.monitor is None or self.save_last
         if not should_save_last:
             return
@@ -428,7 +481,7 @@ if __name__ == "__main__":
             raise ValueError("Cannot find {}".format(opt.resume))
         if os.path.isfile(opt.resume):
             paths = opt.resume.split("/")
-            idx = len(paths)-paths[::-1].index("logs")+1
+            idx = len(paths) - paths[::-1].index("logs") + 1
             logdir = "/".join(paths[:idx])
             ckpt = opt.resume
         else:
@@ -438,20 +491,20 @@ if __name__ == "__main__":
 
         opt.resume_from_checkpoint = ckpt
         base_configs = sorted(glob.glob(os.path.join(logdir, "configs/*.yaml")))
-        opt.base = base_configs+opt.base
+        opt.base = base_configs + opt.base
         _tmp = logdir.split("/")
-        nowname = _tmp[_tmp.index("logs")+1]
+        nowname = _tmp[_tmp.index("logs") + 1]
     else:
         if opt.name:
-            name = "_"+opt.name
+            name = "_" + opt.name
         elif opt.base:
             cfg_fname = os.path.split(opt.base[0])[-1]
             cfg_name = os.path.splitext(cfg_fname)[0]
-            name = "_"+cfg_name
+            name = "_" + cfg_name
         else:
             name = ""
-        nowname = now+name+opt.postfix
-        logdir = os.path.join("/content/drive/MyDrive/logs", nowname)
+        nowname = now + name + opt.postfix
+        logdir = os.path.join("logs", nowname)
 
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
@@ -484,10 +537,15 @@ if __name__ == "__main__":
             if config.model.target == "taming.models.vqgan.VQModel":
                 model = VQModel(**config.model.params, ckpt_path=ckpt)
                 # model.eval()
-            elif config.model.target == "taming.models.cond_transformer.Net2NetTransformer":
-                parent_model = cond_transformer.Net2NetTransformer(**config.model.params, ckpt_path=ckpt)
+            elif (
+                config.model.target
+                == "taming.models.cond_transformer.Net2NetTransformer"
+            ):
+                parent_model = cond_transformer.Net2NetTransformer(
+                    **config.model.params, ckpt_path=ckpt
+                )
                 if opt.eval_parent:
-                  parent_model.eval()
+                    parent_model.eval()
                 model = parent_model.first_stage_model
                 # model = parent_model
             elif config.model.target == "taming.models.vqgan.GumbelVQ":
@@ -498,7 +556,6 @@ if __name__ == "__main__":
         else:
             model = instantiate_from_config(config.model)
         print(model.training)
-            
 
         print("Built model!")
         # trainer and callbacks
@@ -517,14 +574,14 @@ if __name__ == "__main__":
                     "save_dir": logdir,
                     "offline": opt.debug,
                     "id": nowname,
-                }
+                },
             },
             "testtube": {
                 "target": "pytorch_lightning.loggers.TestTubeLogger",
                 "params": {
                     "name": "testtube",
                     "save_dir": logdir,
-                }
+                },
             },
         }
         default_logger_cfg = default_logger_cfgs["testtube"]
@@ -541,9 +598,9 @@ if __name__ == "__main__":
                 "filename": "{epoch:06}",
                 "verbose": True,
                 "save_last": True,
-            }
+            },
         }
-        
+
         if hasattr(model, "monitor"):
             print(f"Monitoring {model.monitor} as checkpoint metric.")
             default_modelckpt_cfg["params"]["monitor"] = model.monitor
@@ -551,15 +608,19 @@ if __name__ == "__main__":
 
         modelckpt_cfg = lightning_config.modelcheckpoint or OmegaConf.create()
         modelckpt_cfg = OmegaConf.merge(default_modelckpt_cfg, modelckpt_cfg)
-        
+
         if opt.every_n_epochs:
-          trainer_kwargs["checkpoint_callback"] = EpochModelCheckpoint(dirpath=ckptdir, 
-                                                                       filename="{epoch:06}", 
-                                                                       verbose=True, 
-                                                                       save_last=True, 
-                                                                       period=opt.every_n_epochs)
+            trainer_kwargs["checkpoint_callback"] = EpochModelCheckpoint(
+                dirpath=ckptdir,
+                filename="{epoch:06}",
+                verbose=True,
+                save_last=True,
+                period=opt.every_n_epochs,
+            )
         else:
-          trainer_kwargs["checkpoint_callback"] = instantiate_from_config(modelckpt_cfg)
+            trainer_kwargs["checkpoint_callback"] = instantiate_from_config(
+                modelckpt_cfg
+            )
 
         # add callback which sets up log directory
         default_callbacks_cfg = {
@@ -573,27 +634,25 @@ if __name__ == "__main__":
                     "cfgdir": cfgdir,
                     "config": config,
                     "lightning_config": lightning_config,
-                }
+                },
             },
             "image_logger": {
                 "target": "main.ImageLogger",
-                "params": {
-                    "batch_frequency": 750,
-                    "max_images": 4,
-                    "clamp": True
-                }
+                "params": {"batch_frequency": 750, "max_images": 4, "clamp": True},
             },
             "learning_rate_logger": {
                 "target": "main.LearningRateMonitor",
                 "params": {
                     "logging_interval": "step",
-                    #"log_momentum": True
-                }
+                    # "log_momentum": True
+                },
             },
         }
         callbacks_cfg = lightning_config.callbacks or OmegaConf.create()
         callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
-        trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
+        trainer_kwargs["callbacks"] = [
+            instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg
+        ]
 
         trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
 
@@ -608,15 +667,18 @@ if __name__ == "__main__":
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            ngpu = len(lightning_config.trainer.gpus.strip(",").split(","))
         else:
             ngpu = 1
         accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches or 1
         print(f"accumulate_grad_batches = {accumulate_grad_batches}")
         lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
         model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr
-        print("Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
-            model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr))
+        print(
+            "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
+                model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr
+            )
+        )
 
         # allow checkpointing via USR1
         def melk(*args, **kwargs):
@@ -628,9 +690,12 @@ if __name__ == "__main__":
 
         def divein(*args, **kwargs):
             if trainer.global_rank == 0:
-                import pudb; pudb.set_trace()
+                import pudb
+
+                pudb.set_trace()
 
         import signal
+
         signal.signal(signal.SIGUSR1, melk)
         signal.signal(signal.SIGUSR2, divein)
 
@@ -644,7 +709,7 @@ if __name__ == "__main__":
         if not opt.no_test and not trainer.interrupted:
             trainer.test(model, data)
     except Exception:
-        if opt.debug and trainer.global_rank==0:
+        if opt.debug and trainer.global_rank == 0:
             try:
                 import pudb as debugger
             except ImportError:
@@ -653,7 +718,7 @@ if __name__ == "__main__":
         raise
     finally:
         # move newly created debug project to debug_runs
-        if opt.debug and not opt.resume and trainer.global_rank==0:
+        if opt.debug and not opt.resume and trainer.global_rank == 0:
             dst, name = os.path.split(logdir)
             dst = os.path.join(dst, "debug_runs", name)
             os.makedirs(os.path.split(dst)[0], exist_ok=True)
