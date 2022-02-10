@@ -2,15 +2,12 @@ import os
 import sys
 
 import numpy as np
-import scipy
 import torch
 import torch.hub
 import torch.nn as nn
-import torch.nn.functional as F
 import torchvision
 from PIL import Image
-from scipy import ndimage
-from tqdm import tqdm, trange
+from tqdm import tqdm
 
 # download deeplabv2_resnet101_msc-cocostuff164k-100000.pth from
 # https://github.com/kazuto1011/deeplab-pytorch/releases/download/v1.0/deeplabv2_resnet101_msc-cocostuff164k-100000.pth

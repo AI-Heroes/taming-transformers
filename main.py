@@ -1,7 +1,6 @@
 import argparse
 import datetime
 import glob
-import importlib
 import os
 import sys
 
@@ -12,10 +11,10 @@ import torchvision
 from omegaconf import OmegaConf
 from PIL import Image
 from pytorch_lightning import seed_everything
-from pytorch_lightning.callbacks import Callback, LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 from pytorch_lightning.trainer import Trainer
 from pytorch_lightning.utilities.distributed import rank_zero_only
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 
 from taming.data.utils import custom_collate
 from taming.models import cond_transformer

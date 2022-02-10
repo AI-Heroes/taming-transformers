@@ -1,19 +1,16 @@
 import argparse
 import glob
-import math
 import os
 import sys
-import time
 
 import numpy as np
 import torch
 from omegaconf import OmegaConf
 from PIL import Image
-from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 from tqdm import trange
 
-from main import DataModuleFromConfig, instantiate_from_config
+from main import instantiate_from_config
 
 
 def save_image(x, path):
@@ -48,7 +45,6 @@ def run_conditional(model, dsets, outdir, top_k, temperature, batch_size=1):
         cond_key = model.cond_stage_key
         c = model.get_input(cond_key, example).to(model.device)
 
-        scale_factor = 1.0
         quant_z, z_indices = model.encode_to_z(x)
         quant_c, c_indices = model.encode_to_c(c)
 

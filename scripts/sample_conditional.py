@@ -10,11 +10,9 @@ import streamlit as st
 import torch
 from omegaconf import OmegaConf
 from PIL import Image
-from streamlit import caching
-from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 
-from main import DataModuleFromConfig, instantiate_from_config
+from main import instantiate_from_config
 
 rescale = lambda x: (x + 1.0) / 2.0
 
